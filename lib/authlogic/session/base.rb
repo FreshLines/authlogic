@@ -399,7 +399,7 @@ module Authlogic
       # Use the "callback installation methods" defined above
       # -----------------------------------------------------
 
-      before_persisting :reset_stale_state
+      before_persisting :reset_stale_state, :unless => :single_access?
 
       # `persist` callbacks, in order of priority
       persist :persist_by_params
@@ -407,7 +407,7 @@ module Authlogic
       persist :persist_by_session
       persist :persist_by_http_auth, if: :persist_by_http_auth?
 
-      after_persisting :enforce_timeout
+      after_persisting :enforce_timeout, :unless => :single_access?
       after_persisting :update_session, unless: :single_access?
       after_persisting :set_last_request_at
 
