@@ -52,7 +52,7 @@ module ActsAsAuthenticTest
       end
       assert_equal Authlogic::CryptoProviders::BCrypt, User.crypto_provider
       silence_warnings do
-        User.crypto_provider Authlogic::CryptoProviders::Sha512
+        User.crypto_provider = Authlogic::CryptoProviders::Sha512
       end
       assert_equal Authlogic::CryptoProviders::Sha512, User.crypto_provider
     end
@@ -90,6 +90,25 @@ module ActsAsAuthenticTest
         ben,
         [Authlogic::CryptoProviders::Sha1, Authlogic::CryptoProviders::BCrypt]
       )
+    end
+
+    def test_v2_crypto_provider_transition
+      ben = users(:ben)
+
+      providers = [
+        Authlogic::CryptoProviders::Sha512::V2,
+        Authlogic::CryptoProviders::MD5::V2,
+        Authlogic::CryptoProviders::Sha1::V2,
+        Authlogic::CryptoProviders::Sha256::V2
+      ]
+      transition_password_to(providers[0], ben)
+      providers.each_cons(2) do |old_provider, new_provider|
+        transition_password_to(
+          new_provider,
+          ben,
+          old_provider
+        )
+      end
     end
 
     def test_checks_password_against_database

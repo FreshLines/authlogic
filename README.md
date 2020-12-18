@@ -6,7 +6,6 @@ An unobtrusive ruby authentication library based on ActiveRecord.
 
 [![Coverage Status](https://coveralls.io/repos/github/binarylogic/authlogic/badge.svg?branch=master)](https://coveralls.io/github/binarylogic/authlogic?branch=master)
 
-
 ## Sponsors
 
 [![Timber Logging](http://res.cloudinary.com/timber/image/upload/v1490556810/pricing/sponsorship.png)](https://timber.io?utm_source=github&utm_medium=authlogic)
@@ -18,8 +17,9 @@ An unobtrusive ruby authentication library based on ActiveRecord.
 | Version     | Documentation |
 | ----------- | ------------- |
 | Unreleased  | https://github.com/binarylogic/authlogic/blob/master/README.md |
-| 5.0.4       | https://github.com/binarylogic/authlogic/blob/v5.0.4/README.md |
-| 4.4.2       | https://github.com/binarylogic/authlogic/blob/v4.4.2/README.md |
+| 6.2.0       | https://github.com/binarylogic/authlogic/blob/v6.2.0/README.md |
+| 5.2.0       | https://github.com/binarylogic/authlogic/blob/v5.2.0/README.md |
+| 4.5.0       | https://github.com/binarylogic/authlogic/blob/v4.5.0/README.md |
 | 3.7.0       | https://github.com/binarylogic/authlogic/blob/v3.7.0/README.md |
 | 2.1.11      | https://github.com/binarylogic/authlogic/blob/v2.1.11/README.rdoc |
 | 1.4.3       | https://github.com/binarylogic/authlogic/blob/v1.4.3/README.rdoc |
@@ -29,9 +29,13 @@ An unobtrusive ruby authentication library based on ActiveRecord.
 - [1. Introduction](#1-introduction)
   - [1.a. Overview](#1a-overview)
   - [1.b. Reference Documentation](#1b-reference-documentation)
+  - [1.c. Installation](#1c-installation)
 - [2. Rails](#2-rails)
   - [2.a. The users table](#2a-the-users-table)
   - [2.b. Controller](#2b-controller)
+    - [2.b.1. Helper Methods](#2b1-helper-methods)
+    - [2.b.2. Routes](#2b2-routes)
+    - [2.b.3. ActionController::API](#2b3-actioncontroller-api)
   - [2.c. View](#2c-view)
   - [2.d. CSRF Protection](#2d-csrf-protection)
 - [3. Testing](#3-testing)
@@ -158,11 +162,19 @@ ActiveRecord model:
 2. **Authlogic::ActsAsAuthentic**, which adds in functionality to your
   ActiveRecord model when you call `acts_as_authentic`.
 
+### 1.c. Installation
+
+To install Authlogic, add this to your Gemfile:
+
+ `gem 'authlogic'`
+
+ And run `bundle install`.
+
 ## 2. Rails
 
 Let's walk through a typical rails setup. ([Compatibility](#90-compatibility))
 
-### 2.a. The users table
+### 2.a.1 The users table
 
 If you want to enable all the features of Authlogic, a migration to create a
 `User` model might look like this:
@@ -173,6 +185,10 @@ class CreateUser < ActiveRecord::Migration
     create_table :users do |t|
       # Authlogic::ActsAsAuthentic::Email
       t.string    :email
+      t.index     :email, unique: true
+
+      # Authlogic::ActsAsAuthentic::Login
+      t.string    :login
 
       # Authlogic::ActsAsAuthentic::Password
       t.string    :crypted_password
@@ -257,6 +273,15 @@ class User < ApplicationRecord
 end
 ```
 
+### 2.a.2. UserSession model
+
+And define a corresponding model in `app/models/user_session.rb`:
+
+```ruby
+class UserSession < Authlogic::Session::Base
+end
+```
+
 ### 2.b. Controller
 
 Your sessions controller will look just like your other controllers.
@@ -268,9 +293,9 @@ class UserSessionsController < ApplicationController
   end
 
   def create
-    @user_session = UserSession.new(user_session_params)
+    @user_session = UserSession.new(user_session_params.to_h)
     if @user_session.save
-      redirect_to account_url
+      redirect_to root_url
     else
       render :action => :new
     end
@@ -284,7 +309,7 @@ class UserSessionsController < ApplicationController
   private
 
   def user_session_params
-    params.require(:user_session).permit(:email, :password, :remember_me)
+    params.require(:user_session).permit(:login, :password, :remember_me)
   end
 end
 ```
@@ -310,10 +335,29 @@ class ApplicationController < ActionController::Base
 end
 ```
 
+#### 2.b.2. Routes
+
+```ruby
+Rails.application.routes.draw do
+  # ...
+  resources :users
+  resource :user_session
+end
+```
+
+#### 2.b.3. ActionController::API
+
+> Because ActionController::API does not include ActionController::Cookies
+> metal and ActionDispatch::Cookies rack module, Therefore, our controller can
+> not use the cookies method.
+> - [#684](https://github.com/binarylogic/authlogic/pull/684).
+
 ### 2.c. View
 
+For example, in `app/views/user_sessions/new.html.erb`:
+
 ```erb
-<%= form_for @user_session do |f| %>
+<%= form_for @user_session, url: user_session_url do |f| %>
   <% if @user_session.errors.any? %>
   <div id="error_explanation">
     <h2><%= pluralize(@user_session.errors.count, "error") %> prohibited:</h2>
@@ -329,6 +373,9 @@ end
   <br />
   <%= f.label :password %><br />
   <%= f.password_field :password %><br />
+  <br />
+  <%= f.label :remember_me %><br />
+  <%= f.check_box :remember_me %><br />
   <br />
   <%= f.submit "Login" %>
 <% end %>
@@ -363,6 +410,15 @@ class ApplicationController < ActionController::Base
   end
 end
 ```
+
+### 2.e. SameSite Cookie Attribute
+The SameSite attribute tells browsers when and how to fire cookies in first- or third-party situations. SameSite is used by a variety of browsers to identify whether or not to allow a cookie to be accessed.
+
+Up until recently, the standard default value when SameSite was not explicitly defined was to allow cookies in both first- and third-party contexts. However, starting with Chrome 80+, the SameSite attribute will not default to Lax behavior meaning cookies will only be permitted in first-party contexts.
+
+Authlogic can allow you to explicitly set the value of SameSite to one of: Lax, Strict, or None. Note that when setting SameSite to None, the `secure` flag must also be set (secure is the default in Authlogic).
+
+Reference: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie#SameSite
 
 ## 3. Testing
 
@@ -405,20 +461,6 @@ current controller object. Then Authlogic leverages that to do everything, it's
 a pretty simple design. Nothing crazy going on, Authlogic is just leveraging the
 tools your framework provides in the controller object.
 
-## 90. Compatibility
-
-| Version | branch       | ruby     | activerecord  |
-| ------- | ------------ | -------- | ------------- |
-| 5.0     | master       | >= 2.3.0 | >= 5.2, < 6.1 |
-| 4.4     | 4-4-stable   | >= 2.3.0 | >= 4.2, < 5.3 |
-| 4.3     | 4-3-stable   | >= 2.3.0 | >= 4.2, < 5.3 |
-| 4.2     | 4-2-stable   | >= 2.2.0 | >= 4.2, < 5.3 |
-| 3       | 3-stable     | >= 1.9.3 | >= 3.2, < 5.3 |
-| 2       | rails2       | >= 1.9.3 | ~> 2.3.0      |
-| 1       | ?            | ?        | ?             |
-
-Under SemVer, [changes to dependencies][10] do not require a major release.
-
 ## 7. Extending
 
 ## 7.a. Extending UserSession
@@ -448,6 +490,21 @@ end
 To learn more about available callbacks, see the "Callbacks" documentation
 in `authlogic/session/base.rb`.
 
+## 90. Compatibility
+
+| Version | branch       | ruby     | activerecord  |
+| ------- | ------------ | -------- | ------------- |
+| 6.3     | 6-3-stable   | >= 2.4.0 | >= 5.2, < 6.2 |
+| 5.2     | 5-2-stable   | >= 2.3.0 | >= 5.2, < 6.1 |
+| 4.5     | 4-5-stable   | >= 2.3.0 | >= 4.2, < 5.3 |
+| 4.3     | 4-3-stable   | >= 2.3.0 | >= 4.2, < 5.3 |
+| 4.2     | 4-2-stable   | >= 2.2.0 | >= 4.2, < 5.3 |
+| 3       | 3-stable     | >= 1.9.3 | >= 3.2, < 5.3 |
+| 2       | rails2       | >= 1.9.3 | ~> 2.3.0      |
+| 1       | ?            | ?        | ?             |
+
+Under SemVer, [changes to dependencies][10] do not require a major release.
+
 ## Intellectual Property
 
 Copyright (c) 2012 Ben Johnson of Binary Logic, released under the MIT license
@@ -456,9 +513,9 @@ Copyright (c) 2012 Ben Johnson of Binary Logic, released under the MIT license
 [2]: https://travis-ci.org/binarylogic/authlogic
 [3]: https://gemnasium.com/badges/github.com/binarylogic/authlogic.svg
 [4]: https://gemnasium.com/binarylogic/authlogic
-[5]: https://badge.fury.io/rb/authlogic.png
+[5]: https://badge.fury.io/rb/authlogic.svg
 [6]: http://badge.fury.io/rb/authlogic
-[7]: https://codeclimate.com/github/binarylogic/authlogic.png
+[7]: https://codeclimate.com/github/binarylogic/authlogic.svg
 [8]: https://codeclimate.com/github/binarylogic/authlogic
 [9]: http://guides.rubyonrails.org/routing.html#resource-routing-the-rails-default
 [10]: https://semver.org/spec/v2.0.0.html#what-should-i-do-if-i-update-my-own-dependencies-without-changing-the-public-api

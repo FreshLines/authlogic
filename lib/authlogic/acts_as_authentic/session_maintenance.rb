@@ -93,9 +93,9 @@ module Authlogic
         end
 
         # Save the record and skip session maintenance all together.
-        def save_without_session_maintenance(*args)
+        def save_without_session_maintenance(**options)
           self.skip_session_maintenance = true
-          result = save(*args)
+          result = save(**options)
           self.skip_session_maintenance = false
           result
         end
@@ -176,7 +176,9 @@ module Authlogic
         end
 
         def log_in_after_password_change?
-          will_save_change_to_persistence_token? && self.class.log_in_after_password_change
+          persisted? &&
+            will_save_change_to_persistence_token? &&
+            self.class.log_in_after_password_change
         end
       end
     end

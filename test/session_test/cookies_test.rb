@@ -76,6 +76,8 @@ module SessionTest
         assert_equal "Strict", session.same_site
         session.same_site = "Lax"
         assert_equal "Lax", session.same_site
+        session.same_site = "None"
+        assert_equal "None", session.same_site
 
         assert_raise(ArgumentError) { UserSession.same_site "foo" }
         assert_raise(ArgumentError) { UserSession.new.same_site "foo" }
@@ -177,6 +179,22 @@ module SessionTest
         assert_equal(
           "#{ben.persistence_token}::#{ben.id}",
           controller.cookies["user_credentials"]
+        )
+      end
+
+      def test_after_save_save_cookie_encrypted
+        ben = users(:ben)
+
+        assert_nil controller.cookies["user_credentials"]
+        payload = "#{ben.persistence_token}::#{ben.id}"
+
+        session = UserSession.new(ben)
+        session.encrypt_cookie = true
+        assert session.save
+        assert_equal payload, controller.cookies.encrypted["user_credentials"]
+        assert_equal(
+          Authlogic::TestCase::MockEncryptedCookieJar.encrypt(payload),
+          controller.cookies.encrypted.parent_jar["user_credentials"]
         )
       end
 
